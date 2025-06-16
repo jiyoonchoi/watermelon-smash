@@ -12,9 +12,8 @@ const FRUITS = [
   { name: 'Apple', size: 64, color: '#69db7c', points: 15, density: 0.0013, restitution: 0.3, friction: 0.7 },
   { name: 'Pear', size: 102, color: '#51cf66', points: 21, density: 0.0014, restitution: 0.3, friction: 0.8 },
   { name: 'Peach', size: 163, color: '#ffb3ba', points: 28, density: 0.0015, restitution: 0.25, friction: 0.8 },
-  { name: 'Pineapple', size: 260, color: '#ffdfba', points: 36, density: 0.0016, restitution: 0.2, friction: 0.9 },
-  { name: 'Melon', size: 416, color: '#baffc9', points: 45, density: 0.0018, restitution: 0.15, friction: 0.9 },
-  { name: 'Watermelon', size: 665, color: '#51cf66', points: 55, density: 0.002, restitution: 0.1, friction: 1.0 }
+  { name: 'Pineapple', size: 200, color: '#ffdfba', points: 36, density: 0.0016, restitution: 0.2, friction: 0.9 },
+  { name: 'Watermelon', size: 300, color: '#51cf66', points: 55, density: 0.002, restitution: 0.1, friction: 1.0 }
 ];
 
 let nextId = 0;
