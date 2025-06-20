@@ -1,19 +1,19 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 
-const GAME_WIDTH = 450;
-const GAME_HEIGHT = 600;
+const GAME_WIDTH = 350; // Reduced for mobile
+const GAME_HEIGHT = 500; // Reduced for mobile
 
 // Updated fruit types with pixel art images (all 50px) - paths updated for fruits directory
 const FRUITS = [
-  { name: 'Grape', size: 20, color: '#8b5cf6', points: 1, density: 0.0008, restitution: 0.6, friction: 0.4, image: '/fruits/grape.png' },
-  { name: 'Blueberry', size: 30, color: '#3b82f6', points: 6, density: 0.001, restitution: 0.4, friction: 0.6, image: '/fruits/blueberry.png' },
-  { name: 'Guava', size: 40, color: '#10b981', points: 10, density: 0.0012, restitution: 0.4, friction: 0.7, image: '/fruits/guava.png' },
-  { name: 'Banana', size: 50, color: '#fbbf24', points: 3, density: 0.0009, restitution: 0.5, friction: 0.5, image: '/fruits/banana.png' },
-  { name: 'Orange', size: 60, color: '#f97316', points: 15, density: 0.0013, restitution: 0.3, friction: 0.7, image: '/fruits/orange.png' },
-  { name: 'Apple', size: 80, color: '#ef4444', points: 21, density: 0.0014, restitution: 0.3, friction: 0.8, image: '/fruits/apple.png' },
-  { name: 'Peach', size: 100, color: '#f472b6', points: 28, density: 0.0015, restitution: 0.25, friction: 0.8, image: '/fruits/peach.png' },
-  { name: 'Pineapple', size: 130, color: '#eab308', points: 36, density: 0.0016, restitution: 0.2, friction: 0.9, image: '/fruits/pineapple.png' },
-  { name: 'Watermelon', size: 160, color: '#22c55e', points: 45, density: 0.0018, restitution: 0.15, friction: 0.9, image: '/fruits/watermelon.png' }
+  { name: 'Grape', size: 18, color: '#8b5cf6', points: 1, density: 0.0008, restitution: 0.6, friction: 0.4, image: '/fruits/grape.png' },
+  { name: 'Blueberry', size: 25, color: '#3b82f6', points: 6, density: 0.001, restitution: 0.4, friction: 0.6, image: '/fruits/blueberry.png' },
+  { name: 'Guava', size: 32, color: '#10b981', points: 10, density: 0.0012, restitution: 0.4, friction: 0.7, image: '/fruits/guava.png' },
+  { name: 'Banana', size: 40, color: '#fbbf24', points: 3, density: 0.0009, restitution: 0.5, friction: 0.5, image: '/fruits/banana.png' },
+  { name: 'Orange', size: 48, color: '#f97316', points: 15, density: 0.0013, restitution: 0.3, friction: 0.7, image: '/fruits/orange.png' },
+  { name: 'Apple', size: 60, color: '#ef4444', points: 21, density: 0.0014, restitution: 0.3, friction: 0.8, image: '/fruits/apple.png' },
+  { name: 'Peach', size: 75, color: '#f472b6', points: 28, density: 0.0015, restitution: 0.25, friction: 0.8, image: '/fruits/peach.png' },
+  { name: 'Pineapple', size: 95, color: '#eab308', points: 36, density: 0.0016, restitution: 0.2, friction: 0.9, image: '/fruits/pineapple.png' },
+  { name: 'Watermelon', size: 115, color: '#22c55e', points: 45, density: 0.0018, restitution: 0.15, friction: 0.9, image: '/fruits/watermelon.png' }
 ];
 
 let nextId = 0;
@@ -80,6 +80,7 @@ export default function WatermelonMergeGame() {
   const [maxFruitTypeDropped, setMaxFruitTypeDropped] = useState(0); // Track largest fruit type dropped
   const [particles, setParticles] = useState([]); // For merge animations
   const [audioEnabled, setAudioEnabled] = useState(false); // Track if audio context is started
+  const [touchPosition, setTouchPosition] = useState(null);
   
   const animationRef = useRef();
   const gameAreaRef = useRef();
@@ -363,30 +364,59 @@ export default function WatermelonMergeGame() {
     }
   }, [maxFruitTypeDropped, generateNextFruit, matterLoaded]);
 
-  // Handle mouse movement
-  const handleMouseMove = (e) => {
-    if (isDropping || !matterLoaded) return;
+  // Get position from touch or mouse event
+  const getEventPosition = useCallback((e) => {
     const rect = gameAreaRef.current.getBoundingClientRect();
-    const x = e.clientX - rect.left;
+    if (e.touches && e.touches[0]) {
+      return {
+        x: e.touches[0].clientX - rect.left,
+        y: e.touches[0].clientY - rect.top
+      };
+    }
+    return {
+      x: e.clientX - rect.left,
+      y: e.clientY - rect.top
+    };
+  }, []);
+
+  // Handle touch/mouse movement
+  const handleMove = useCallback((e) => {
+    if (isDropping || !matterLoaded) return;
+    
+    const pos = getEventPosition(e);
     const fruitSize = FRUITS[nextFruitType].size;
-    setDropPosition(Math.max(fruitSize, Math.min(GAME_WIDTH - fruitSize, x)));
-  };
+    const newX = Math.max(fruitSize, Math.min(GAME_WIDTH - fruitSize, pos.x));
+    setDropPosition(newX);
+    setTouchPosition(pos);
+  }, [isDropping, matterLoaded, nextFruitType, getEventPosition]);
+
+  // Handle touch start
+  const handleTouchStart = useCallback((e) => {
+    e.preventDefault(); // Prevent scrolling
+    handleMove(e);
+  }, [handleMove]);
+
+  // Handle touch move
+  const handleTouchMove = useCallback((e) => {
+    e.preventDefault(); // Prevent scrolling
+    handleMove(e);
+  }, [handleMove]);
 
   // Drop fruit
   const dropFruit = async (e) => {
     if (isDropping || gameOver || !matterLoaded) return;
+    
+    e.preventDefault(); // Prevent default behavior
     
     // Initialize audio on first interaction
     if (!audioEnabled) {
       await initAudio();
     }
     
-    // Only drop if clicking inside the game area
-    const rect = gameAreaRef.current.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
+    // Only drop if touching/clicking inside the game area
+    const pos = getEventPosition(e);
     
-    if (x < 0 || x > GAME_WIDTH || y < 0 || y > GAME_HEIGHT) {
+    if (pos.x < 0 || pos.x > GAME_WIDTH || pos.y < 0 || pos.y > GAME_HEIGHT) {
       return;
     }
     
@@ -418,12 +448,13 @@ export default function WatermelonMergeGame() {
     setMaxFruitTypeDropped(0); // Reset max fruit type
     setNextFruitType(0); // Start with smallest fruit
     setParticles([]); // Clear particles
+    setTouchPosition(null);
     pendingMerges.current.clear();
   };
 
-  // Calculate preview size (fixed at 50px for pixel art)
+  // Calculate preview size (fixed at 40px for mobile)
   const getPreviewSize = (fruitType) => {
-    return 50; // All pixel art images are 50px
+    return 40; // Smaller preview for mobile
   };
 
   if (!matterLoaded) {
@@ -435,16 +466,16 @@ export default function WatermelonMergeGame() {
   }
 
   return (
-    <div className="flex flex-col items-center justify-center min-h-screen bg-gradient-to-br from-blue-100 to-green-100 p-4">
-      <div className="bg-white rounded-xl shadow-2xl p-6 max-w-2xl w-full">
-        <h1 className="text-3xl font-bold text-center mb-4 text-gray-800">
+    <div className="flex flex-col items-center justify-center min-h-screen bg-gradient-to-br from-blue-100 to-green-100 p-2 sm:p-4">
+      <div className="bg-white rounded-xl shadow-2xl p-3 sm:p-6 w-full max-w-md">
+        <h1 className="text-2xl sm:text-3xl font-bold text-center mb-3 sm:mb-4 text-gray-800">
           watermelon smash
         </h1>
         
-        <div className="flex justify-between items-center mb-4">
-          <div className="text-xl font-semibold">Score: {score}</div>
+        <div className="flex justify-between items-center mb-3 sm:mb-4 text-sm sm:text-base">
+          <div className="font-semibold">Score: {score}</div>
           <div className="flex items-center gap-2">
-            <span>Next:</span>
+            <span className="text-sm">Next:</span>
             <div 
               className="rounded-full border-2 border-gray-300 flex items-center justify-center overflow-hidden"
               style={{
@@ -467,7 +498,7 @@ export default function WatermelonMergeGame() {
           </div>
           <button 
             onClick={resetGame}
-            className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 transition-colors"
+            className="px-3 py-1 sm:px-4 sm:py-2 bg-blue-500 text-white rounded hover:bg-blue-600 transition-colors text-sm sm:text-base"
           >
             Reset
           </button>
@@ -485,10 +516,17 @@ export default function WatermelonMergeGame() {
           {/* Game container */}
           <div
             ref={gameAreaRef}
-            className="relative bg-gradient-to-b from-sky-100 to-sky-200 border-4 border-gray-400 cursor-pointer overflow-hidden"
-            style={{ width: GAME_WIDTH, height: GAME_HEIGHT }}
-            onMouseMove={handleMouseMove}
+            className="relative bg-gradient-to-b from-sky-100 to-sky-200 border-4 border-gray-400 cursor-pointer overflow-hidden touch-none"
+            style={{ 
+              width: GAME_WIDTH, 
+              height: GAME_HEIGHT,
+              touchAction: 'none'
+            }}
+            onMouseMove={handleMove}
             onClick={dropFruit}
+            onTouchStart={handleTouchStart}
+            onTouchMove={handleTouchMove}
+            onTouchEnd={dropFruit}
           >
             {/* Game over line */}
             <div 
@@ -544,12 +582,12 @@ export default function WatermelonMergeGame() {
             {/* Game over overlay */}
             {gameOver && (
               <div className="absolute inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-                <div className="bg-white p-6 rounded-lg text-center">
-                  <h2 className="text-2xl font-bold mb-2">Game Over!</h2>
-                  <p className="text-lg mb-4">Final Score: {score}</p>
+                <div className="bg-white p-4 sm:p-6 rounded-lg text-center mx-4">
+                  <h2 className="text-xl sm:text-2xl font-bold mb-2">Game Over!</h2>
+                  <p className="text-base sm:text-lg mb-4">Final Score: {score}</p>
                   <button 
                     onClick={resetGame}
-                    className="px-6 py-2 bg-green-500 text-white rounded hover:bg-green-600 transition-colors"
+                    className="px-4 py-2 sm:px-6 sm:py-2 bg-green-500 text-white rounded hover:bg-green-600 transition-colors"
                   >
                     Play Again
                   </button>
@@ -558,24 +596,24 @@ export default function WatermelonMergeGame() {
             )}
           </div>
           
-          <div className="text-center mt-2 text-sm text-gray-600">
-            Move mouse to aim, click to drop fruit
-            {!audioEnabled && <div className="text-xs text-gray-500 mt-1">Click to enable sound effects!</div>}
+          <div className="text-center mt-2 text-xs sm:text-sm text-gray-600">
+            <div>Touch and drag to aim, release to drop</div>
+            {!audioEnabled && <div className="text-xs text-gray-500 mt-1">Touch to enable sound effects!</div>}
           </div>
         </div>
         
         {/* Fruit progression chart */}
-        <div className="mt-4 text-center">
-          <p className="text-sm text-gray-600 mb-2">Fruit Evolution Chart:</p>
-          <div className="flex justify-center items-center gap-1 mb-2">
+        <div className="mt-3 sm:mt-4 text-center">
+          <p className="text-xs sm:text-sm text-gray-600 mb-2">Fruit Evolution Chart:</p>
+          <div className="flex justify-center items-center gap-0.5 sm:gap-1 mb-2 overflow-x-auto">
             {/* Fruits */}
             {FRUITS.map((fruit, index) => (
-              <div key={index} className="flex flex-col items-center">
+              <div key={index} className="flex flex-col items-center flex-shrink-0">
                 <div 
                   className="border border-gray-300 flex items-center justify-center overflow-hidden"
                   style={{
-                    width: 30,
-                    height: 30
+                    width: 24,
+                    height: 24
                   }}
                 >
                   <img 
