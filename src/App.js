@@ -468,9 +468,12 @@ export default function WatermelonMergeGame() {
   return (
     <div className="flex flex-col items-center justify-center min-h-screen bg-gradient-to-br from-blue-100 to-green-100 p-2 sm:p-4">
       <div className="bg-white rounded-xl shadow-2xl p-3 sm:p-6 w-full max-w-md">
-        <h1 className="text-2xl sm:text-3xl font-bold text-center mb-3 sm:mb-4 text-gray-800">
+        <h1 className="text-2xl sm:text-3xl font-bold text-center text-gray-800">
           watermelon smash
         </h1>
+        <h3 className="text-2xl sm:text-xl text-center mb-3 sm:mb-4 text-gray-400">
+          by jiyoon
+        </h3>
         
         <div className="flex justify-between items-center mb-3 sm:mb-4 text-sm sm:text-base">
           <div className="font-semibold">Score: {score}</div>
@@ -612,8 +615,8 @@ export default function WatermelonMergeGame() {
                 <div 
                   className="border border-gray-300 flex items-center justify-center overflow-hidden"
                   style={{
-                    width: 24,
-                    height: 24
+                    width: fruit.size * 0.7,
+                    height: fruit.size * 0.7
                   }}
                 >
                   <img 
