@@ -3,23 +3,24 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 const GAME_WIDTH = 450;
 const GAME_HEIGHT = 600;
 
-// Fruit types with smaller sizes, colors, and physics properties
+// Updated fruit types with pixel art images (all 50px) - paths updated for fruits directory
 const FRUITS = [
-  { name: 'Cherry', size: 10, color: '#ff6b6b', points: 1, density: 0.0008, restitution: 0.6, friction: 0.4 },
-  { name: 'Strawberry', size: 16, color: '#ff8e8e', points: 3, density: 0.0009, restitution: 0.5, friction: 0.5 },
-  { name: 'Grape', size: 25, color: '#9c88ff', points: 6, density: 0.001, restitution: 0.4, friction: 0.6 },
-  { name: 'Orange', size: 40, color: '#ffa94d', points: 10, density: 0.0012, restitution: 0.4, friction: 0.7 },
-  { name: 'Apple', size: 64, color: '#69db7c', points: 15, density: 0.0013, restitution: 0.3, friction: 0.7 },
-  { name: 'Pear', size: 102, color: '#51cf66', points: 21, density: 0.0014, restitution: 0.3, friction: 0.8 },
-  { name: 'Peach', size: 163, color: '#ffb3ba', points: 28, density: 0.0015, restitution: 0.25, friction: 0.8 },
-  { name: 'Pineapple', size: 200, color: '#ffdfba', points: 36, density: 0.0016, restitution: 0.2, friction: 0.9 },
-  { name: 'Watermelon', size: 300, color: '#51cf66', points: 55, density: 0.002, restitution: 0.1, friction: 1.0 }
+  { name: 'Grape', size: 20, color: '#8b5cf6', points: 1, density: 0.0008, restitution: 0.6, friction: 0.4, image: '/fruits/grape.png' },
+  { name: 'Blueberry', size: 30, color: '#3b82f6', points: 6, density: 0.001, restitution: 0.4, friction: 0.6, image: '/fruits/blueberry.png' },
+  { name: 'Guava', size: 40, color: '#10b981', points: 10, density: 0.0012, restitution: 0.4, friction: 0.7, image: '/fruits/guava.png' },
+  { name: 'Banana', size: 50, color: '#fbbf24', points: 3, density: 0.0009, restitution: 0.5, friction: 0.5, image: '/fruits/banana.png' },
+  { name: 'Orange', size: 60, color: '#f97316', points: 15, density: 0.0013, restitution: 0.3, friction: 0.7, image: '/fruits/orange.png' },
+  { name: 'Apple', size: 80, color: '#ef4444', points: 21, density: 0.0014, restitution: 0.3, friction: 0.8, image: '/fruits/apple.png' },
+  { name: 'Peach', size: 100, color: '#f472b6', points: 28, density: 0.0015, restitution: 0.25, friction: 0.8, image: '/fruits/peach.png' },
+  { name: 'Pineapple', size: 130, color: '#eab308', points: 36, density: 0.0016, restitution: 0.2, friction: 0.9, image: '/fruits/pineapple.png' },
+  { name: 'Watermelon', size: 160, color: '#22c55e', points: 45, density: 0.0018, restitution: 0.15, friction: 0.9, image: '/fruits/watermelon.png' }
 ];
 
 let nextId = 0;
 
 // Matter.js setup
 let Matter;
+let Tone;
 let engine, world;
 let bodies = new Map(); // Map to track Matter bodies to React state
 
@@ -55,6 +56,19 @@ const initMatter = async () => {
   return { Matter, engine, world };
 };
 
+// Initialize Tone.js
+const initTone = async () => {
+  if (!Tone) {
+    Tone = await new Promise((resolve) => {
+      const script = document.createElement('script');
+      script.src = 'https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.js';
+      script.onload = () => resolve(window.Tone);
+      document.head.appendChild(script);
+    });
+  }
+  return Tone;
+};
+
 export default function WatermelonMergeGame() {
   const [fruits, setFruits] = useState([]);
   const [score, setScore] = useState(0);
@@ -64,6 +78,8 @@ export default function WatermelonMergeGame() {
   const [isDropping, setIsDropping] = useState(false);
   const [matterLoaded, setMatterLoaded] = useState(false);
   const [maxFruitTypeDropped, setMaxFruitTypeDropped] = useState(0); // Track largest fruit type dropped
+  const [particles, setParticles] = useState([]); // For merge animations
+  const [audioEnabled, setAudioEnabled] = useState(false); // Track if audio context is started
   
   const animationRef = useRef();
   const gameAreaRef = useRef();
@@ -71,12 +87,141 @@ export default function WatermelonMergeGame() {
   const worldRef = useRef();
   const bodiesRef = useRef(new Map());
   const pendingMerges = useRef(new Set());
+  const particleIdRef = useRef(0);
+  const synthRef = useRef(null);
+  const toneLoadedRef = useRef(false);
 
-  // Generate next fruit type (limited by max fruit type dropped)
+  // Initialize audio
+  const initAudio = useCallback(async () => {
+    if (!audioEnabled && !toneLoadedRef.current) {
+      try {
+        await initTone();
+        toneLoadedRef.current = true;
+        
+        if (Tone.context.state !== 'running') {
+          await Tone.start();
+        }
+        
+        // Create a simple synth for merge sounds
+        synthRef.current = new Tone.Synth({
+          oscillator: {
+            type: 'sine'
+          },
+          envelope: {
+            attack: 0.01,
+            decay: 0.2,
+            sustain: 0.1,
+            release: 0.3
+          }
+        }).toDestination();
+        
+        setAudioEnabled(true);
+      } catch (error) {
+        console.log('Audio initialization failed:', error);
+      }
+    }
+  }, [audioEnabled]);
+
+  // Play merge sound
+  const playMergeSound = useCallback((fruitType) => {
+    if (!audioEnabled || !synthRef.current || !toneLoadedRef.current) return;
+    
+    try {
+      // Higher fruit types = higher pitch + more complex sound
+      const baseFreq = 200 + (fruitType * 100); // Frequency increases with fruit size
+      const duration = 0.3 + (fruitType * 0.1); // Longer duration for bigger fruits
+      
+      // Play a pleasant chord-like sound
+      synthRef.current.triggerAttackRelease(baseFreq, duration);
+      
+      // Add a harmonic for bigger fruits
+      if (fruitType >= 3) {
+        setTimeout(() => {
+          synthRef.current.triggerAttackRelease(baseFreq * 1.5, duration * 0.7);
+        }, 50);
+      }
+      
+      // Add another harmonic for the biggest fruits
+      if (fruitType >= 6) {
+        setTimeout(() => {
+          synthRef.current.triggerAttackRelease(baseFreq * 2, duration * 0.5);
+        }, 100);
+      }
+    } catch (error) {
+      console.log('Sound playback failed:', error);
+    }
+  }, [audioEnabled]);
+
+  // Create particle burst animation
+  const createParticleBurst = useCallback((x, y, color, fruitType) => {
+    const particleCount = Math.min(8 + fruitType * 2, 16); // More particles for bigger fruits
+    const newParticles = [];
+    
+    for (let i = 0; i < particleCount; i++) {
+      const angle = (Math.PI * 2 * i) / particleCount;
+      const velocity = 2 + Math.random() * 3; // Random velocity
+      const size = 3 + Math.random() * 4; // Random size
+      const life = 60 + Math.random() * 30; // 60-90 frames
+      
+      newParticles.push({
+        id: particleIdRef.current++,
+        x: x,
+        y: y,
+        vx: Math.cos(angle) * velocity,
+        vy: Math.sin(angle) * velocity - 1, // Slight upward bias
+        size: size,
+        maxSize: size,
+        color: color,
+        life: life,
+        maxLife: life,
+        gravity: 0.1
+      });
+    }
+    
+    setParticles(prev => [...prev, ...newParticles]);
+  }, []);
+
+  // Update particles animation
+  const updateParticles = useCallback(() => {
+    setParticles(prev => prev.map(particle => ({
+      ...particle,
+      x: particle.x + particle.vx,
+      y: particle.y + particle.vy,
+      vy: particle.vy + particle.gravity,
+      vx: particle.vx * 0.98, // Air resistance
+      life: particle.life - 1,
+      size: particle.maxSize * (particle.life / particle.maxLife) // Shrink over time
+    })).filter(particle => particle.life > 0));
+  }, []);
+
+  // Generate next fruit type (limited to orange - index 4)
   const generateNextFruit = useCallback(() => {
-    const maxAvailable = Math.min(maxFruitTypeDropped, 4); // Cap at first 5 types (0-4)
+    const maxAvailable = Math.min(maxFruitTypeDropped, 4); // Cap at orange (index 4)
     return Math.floor(Math.random() * (maxAvailable + 1));
   }, [maxFruitTypeDropped]);
+
+  // Create a new fruit body
+  const createFruit = useCallback((x, y, type) => {
+    if (!Matter || !worldRef.current) return;
+
+    const fruit = FRUITS[type];
+    const radius = fruit.size;
+    const fruitId = nextId++;
+    
+    const body = Matter.Bodies.circle(x, y, radius, {
+      restitution: fruit.restitution,
+      friction: fruit.friction,
+      density: fruit.density,
+      frictionAir: 0.005
+    });
+    
+    body.fruitData = { id: fruitId, type, createdAt: Date.now() };
+    
+    Matter.World.add(worldRef.current, body);
+    bodiesRef.current.set(fruitId, body);
+    
+    return fruitId;
+  }, []);
 
   // Initialize Matter.js
   useEffect(() => {
@@ -127,13 +272,21 @@ export default function WatermelonMergeGame() {
         const x = (bodyA.position.x + bodyB.position.x) / 2;
         const y = (bodyA.position.y + bodyB.position.y) / 2;
 
+        // Create particle burst at merge location
+        createParticleBurst(x, y, FRUITS[newType].color, newType);
+
+        // Play merge sound
+        playMergeSound(newType);
+
         // Remove old bodies
         Matter.World.remove(worldRef.current, [bodyA, bodyB]);
         bodiesRef.current.delete(bodyA.fruitData.id);
         bodiesRef.current.delete(bodyB.fruitData.id);
 
-        // Create new merged fruit
-        createFruit(x, y, newType);
+        // Create new merged fruit with slight delay for effect
+        setTimeout(() => {
+          createFruit(x, y, newType);
+        }, 100);
         
         // Update max fruit type dropped if we created a new larger fruit
         setMaxFruitTypeDropped(prev => Math.max(prev, newType));
@@ -145,33 +298,10 @@ export default function WatermelonMergeGame() {
         setTimeout(() => {
           pendingMerges.current.delete(bodyA.id);
           pendingMerges.current.delete(bodyB.id);
-        }, 50);
+        }, 150);
       });
     }
-  }, []);
-
-  // Create a new fruit body
-  const createFruit = useCallback((x, y, type) => {
-    if (!Matter || !worldRef.current) return;
-
-    const fruit = FRUITS[type];
-    const radius = fruit.size;
-    const fruitId = nextId++;
-    
-    const body = Matter.Bodies.circle(x, y, radius, {
-      restitution: fruit.restitution,
-      friction: fruit.friction,
-      density: fruit.density,
-      frictionAir: 0.005
-    });
-    
-    body.fruitData = { id: fruitId, type, createdAt: Date.now() };
-    
-    Matter.World.add(worldRef.current, body);
-    bodiesRef.current.set(fruitId, body);
-    
-    return fruitId;
-  }, []);
+  }, [createParticleBurst, playMergeSound, createFruit]);
 
   // Update fruit positions from Matter.js bodies
   const updateFruits = useCallback(() => {
@@ -212,6 +342,7 @@ export default function WatermelonMergeGame() {
         Matter.Engine.update(engineRef.current, 20); // Slightly larger timestep
         handleCollisions();
         updateFruits();
+        updateParticles(); // Update particle animations
       }
       animationRef.current = requestAnimationFrame(animate);
     };
@@ -223,7 +354,7 @@ export default function WatermelonMergeGame() {
         cancelAnimationFrame(animationRef.current);
       }
     };
-  }, [matterLoaded, gameOver, handleCollisions, updateFruits]);
+  }, [matterLoaded, gameOver, handleCollisions, updateFruits, updateParticles]);
 
   // Update next fruit type when max fruit type changes
   useEffect(() => {
@@ -242,8 +373,13 @@ export default function WatermelonMergeGame() {
   };
 
   // Drop fruit
-  const dropFruit = (e) => {
+  const dropFruit = async (e) => {
     if (isDropping || gameOver || !matterLoaded) return;
+    
+    // Initialize audio on first interaction
+    if (!audioEnabled) {
+      await initAudio();
+    }
     
     // Only drop if clicking inside the game area
     const rect = gameAreaRef.current.getBoundingClientRect();
@@ -281,7 +417,13 @@ export default function WatermelonMergeGame() {
     setIsDropping(false);
     setMaxFruitTypeDropped(0); // Reset max fruit type
     setNextFruitType(0); // Start with smallest fruit
+    setParticles([]); // Clear particles
     pendingMerges.current.clear();
+  };
+
+  // Calculate preview size (fixed at 50px for pixel art)
+  const getPreviewSize = (fruitType) => {
+    return 50; // All pixel art images are 50px
   };
 
   if (!matterLoaded) {
@@ -296,7 +438,7 @@ export default function WatermelonMergeGame() {
     <div className="flex flex-col items-center justify-center min-h-screen bg-gradient-to-br from-blue-100 to-green-100 p-4">
       <div className="bg-white rounded-xl shadow-2xl p-6 max-w-2xl w-full">
         <h1 className="text-3xl font-bold text-center mb-4 text-gray-800">
-          🍉 Watermelon Merge Game
+          watermelon smash
         </h1>
         
         <div className="flex justify-between items-center mb-4">
@@ -304,14 +446,23 @@ export default function WatermelonMergeGame() {
           <div className="flex items-center gap-2">
             <span>Next:</span>
             <div 
-              className="rounded-full border-2 border-gray-300 flex items-center justify-center text-xs font-bold text-white"
+              className="rounded-full border-2 border-gray-300 flex items-center justify-center overflow-hidden"
               style={{
-                width: FRUITS[2].size * 2, // Always grape size (index 2)
-                height: FRUITS[2].size * 2, // Always grape size (index 2)
-                backgroundColor: FRUITS[nextFruitType].color
+                width: getPreviewSize(nextFruitType),
+                height: getPreviewSize(nextFruitType),
+                backgroundColor: 'transparent'
               }}
             >
-              {FRUITS[nextFruitType].name.slice(0, 2)}
+              <img 
+                src={FRUITS[nextFruitType].image}
+                alt={FRUITS[nextFruitType].name}
+                style={{ 
+                  width: '100%', 
+                  height: '100%', 
+                  objectFit: 'contain',
+                  imageRendering: 'pixelated'
+                }}
+              />
             </div>
           </div>
           <button 
@@ -349,25 +500,50 @@ export default function WatermelonMergeGame() {
             {fruits.map(fruit => (
               <div
                 key={fruit.id}
-                className="absolute rounded-full border border-gray-300 transition-none flex items-center justify-center"
+                className="absolute transition-none flex items-center justify-center overflow-hidden"
                 style={{
                   left: fruit.x - FRUITS[fruit.type].size,
                   top: fruit.y - FRUITS[fruit.type].size,
                   width: FRUITS[fruit.type].size * 2,
                   height: FRUITS[fruit.type].size * 2,
-                  backgroundColor: FRUITS[fruit.type].color,
                   zIndex: 1
                 }}
               >
-                <div className="text-xs font-bold text-white" style={{ textShadow: '1px 1px 2px rgba(0,0,0,0.5)' }}>
-                  {FRUITS[fruit.type].name.slice(0, 2)}
-                </div>
+                <img 
+                  src={FRUITS[fruit.type].image}
+                  alt={FRUITS[fruit.type].name}
+                  style={{ 
+                    width: '100%', 
+                    height: '100%', 
+                    objectFit: 'contain',
+                    imageRendering: 'pixelated' // Keep pixel art crisp
+                  }}
+                />
               </div>
+            ))}
+
+            {/* Particle effects */}
+            {particles.map(particle => (
+              <div
+                key={particle.id}
+                className="absolute rounded-full pointer-events-none"
+                style={{
+                  left: particle.x - particle.size / 2,
+                  top: particle.y - particle.size / 2,
+                  width: particle.size,
+                  height: particle.size,
+                  backgroundColor: particle.color,
+                  opacity: particle.life / particle.maxLife,
+                  zIndex: 10,
+                  boxShadow: `0 0 ${particle.size}px ${particle.color}`,
+                  filter: 'brightness(1.2)'
+                }}
+              />
             ))}
             
             {/* Game over overlay */}
             {gameOver && (
-              <div className="absolute inset-0 bg-black bg-opacity-50 flex items-center justify-center">
+              <div className="absolute inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
                 <div className="bg-white p-6 rounded-lg text-center">
                   <h2 className="text-2xl font-bold mb-2">Game Over!</h2>
                   <p className="text-lg mb-4">Final Score: {score}</p>
@@ -384,14 +560,41 @@ export default function WatermelonMergeGame() {
           
           <div className="text-center mt-2 text-sm text-gray-600">
             Move mouse to aim, click to drop fruit
+            {!audioEnabled && <div className="text-xs text-gray-500 mt-1">Click to enable sound effects!</div>}
           </div>
         </div>
         
-        {/* Instructions */}
-        <div className="mt-4 text-sm text-gray-600 text-center">
-          <p>Drop identical fruits to merge them into bigger fruits!</p>
-          <p>The next fruit will never be larger than your biggest achievement!</p>
-          <p>Try to create the ultimate watermelon! 🍉</p>
+        {/* Fruit progression chart */}
+        <div className="mt-4 text-center">
+          <p className="text-sm text-gray-600 mb-2">Fruit Evolution Chart:</p>
+          <div className="flex justify-center items-center gap-1 mb-2">
+            {/* Fruits */}
+            {FRUITS.map((fruit, index) => (
+              <div key={index} className="flex flex-col items-center">
+                <div 
+                  className="border border-gray-300 flex items-center justify-center overflow-hidden"
+                  style={{
+                    width: 30,
+                    height: 30
+                  }}
+                >
+                  <img 
+                    src={fruit.image}
+                    alt={fruit.name}
+                    style={{ 
+                      width: '100%', 
+                      height: '100%', 
+                      objectFit: 'contain',
+                      imageRendering: 'pixelated'
+                    }}
+                  />
+                </div>
+              </div>
+            ))}
+          </div>
+          <div className="text-xs text-gray-500">
+            <p>Drop identical fruits to merge!</p>
+          </div>
         </div>
       </div>
     </div>
